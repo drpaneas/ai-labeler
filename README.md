@@ -1,93 +1,91 @@
-# ai-labeler
+# JIRA Ticket Labeler with LocalAI
 
+This project automatically applies appropriate labels to JIRA tickets based on their content using AI analysis. It uses LocalAI as the LLM provider for local inference instead of relying on OpenAI's cloud services.
 
+## Features
 
-## Getting started
+- Automatically reviews JIRA tickets without labels
+- Uses AI to analyze ticket content and suggest appropriate labels
+- Works with LocalAI for fully local/on-premises inference
+- Applies selected labels directly to JIRA tickets
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Prerequisites
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- Go 1.18 or later
+- A running LocalAI instance (see [LocalAI documentation](https://localai.io/basics/getting_started/))
+- JIRA API access token
 
-## Add your files
+## Setup LocalAI
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+1. Install and run LocalAI following the [official documentation](https://localai.io/basics/getting_started/).
 
+2. Start a LocalAI server with a model that supports chat completions. For example:
+
+```bash
+# Using Docker
+docker run -ti --name local-ai -p 8080:8080 localai/localai:latest-cpu
+
+# Or using the installer
+curl https://localai.io/install.sh | sh
+local-ai run llama-3.2-1b-instruct:q4_k_m  # Or any other compatible model
 ```
-cd existing_repo
-git remote add origin https://gitlab.cee.redhat.com/pgeorgia/ai-labeler.git
-git branch -M main
-git push -uf origin main
+
+3. Ensure your model is configured for chat completions and is running correctly.
+
+## Configuration
+
+The application requires the following environment variables:
+
+```bash
+# Set your JIRA API token
+export JIRA_API_TOKEN=your_jira_api_token_here
+
+# Set LocalAI endpoint (defaults to http://localhost:8080/v1 if not set)
+export LOCALAI_API_URL=http://localhost:8080/v1
 ```
 
-## Integrate with your tools
+## Compatible LLMs
 
-- [ ] [Set up project integrations](https://gitlab.cee.redhat.com/pgeorgia/ai-labeler/-/settings/integrations)
+LocalAI supports various models that can be used with this application:
 
-## Collaborate with your team
+- Llama-based models (llama-3.2-1b-instruct, llama2, etc.)
+- Mistral models
+- Phi-2
+- Gemma
+- Any other model LocalAI supports that can handle chat completions
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+Choose a model that offers good performance on classification tasks. Smaller models like Phi-2, Gemma 2B, or Llama-3.2-1b-instruct may be sufficient for this text classification use case.
 
-## Test and Deploy
+## Running the Application
 
-Use the built-in continuous integration in GitLab.
+```bash
+go run main.go
+```
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+The application will:
+1. Query JIRA tickets within the specified range
+2. Check if they have labels from our predefined set
+3. For tickets without appropriate labels, use LocalAI to analyze content and suggest a label
+4. Apply the suggested label to the JIRA ticket
 
-***
+## Customizing Labels
 
-# Editing this README
+These labels are used for Developer Sandbox
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+The current set of labels the system works with includes:
+- quality - for tests, QA, QE, end-to-end or performance testing
+- feature - for new tasks and feature implementations
+- support - for tasks involving direct communication
+- maintenance - for routine upkeep and automation
+- alerts - for alert management tasks
+- security - for security-related tasks
+- aws-abuse - for AWS abuse reports
 
-## Suggestions for a good README
+To modify these labels, edit the `labelInfo` variable in the `run()` function.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+## Troubleshooting
 
-## Name
-Choose a self-explaining name for your project.
+- **LocalAI Connection Issues**: Ensure your LocalAI instance is running and accessible at the configured URL.
+- **Model Selection**: If you're getting poor results, try using a different model with LocalAI.
+- **Resource Usage**: Smaller models will use fewer resources but may provide less accurate results.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
