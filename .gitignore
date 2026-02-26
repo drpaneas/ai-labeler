@@ -1,0 +1,47 @@
+# Binaries
+/ai-labeler
+/ai-labeler-*
+*.exe
+
+# Test and coverage files
+*.test
+*.out
+coverage.html
+*.prof
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Config files with sensitive data
+config.json
+!config-example.json
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Build directories
+dist/
+build/
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work

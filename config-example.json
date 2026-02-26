@@ -1,0 +1,40 @@
+{
+  "labels": [
+    {
+      "name": "quality",
+      "description": "label is used for tests, qa, qe and other end to end or performance test and benchmarks"
+    },
+    {
+      "name": "feature",
+      "description": "label is used for new tasks, implementing new features and functionality"
+    },
+    {
+      "name": "support",
+      "description": "label is used for tasks that involve direct communication - sending emails, chatting on Slack, or handling inquiries."
+    },
+    {
+      "name": "maintenance",
+      "description": "label is used for routine upkeep such as updating automation scripts in your SRE repository, ArgoCD, and other scheduled toil work typical for SRE teams."
+    },
+    {
+      "name": "alerts",
+      "description": "label is used for all tasks related to alert management - reviewing, fixing, adding, or deleting alerts. Including SOPs for these alerts."
+    },
+    {
+      "name": "security",
+      "description": "label is used for banning, vulnerability assessments, CVEs, and other security-related tasks."
+    },
+    {
+      "name": "aws-abuse",
+      "description": "label is used for AWS abuse report e-mails specifically, which is a unique case."
+    }
+  ],
+  "jira": {
+    "url": "https://your-domain.atlassian.net",
+    "project": "SANDBOX"
+  },
+  "llm": {
+    "provider": "gemini",
+    "model": "gemini-2.5-flash"
+  }
+}
