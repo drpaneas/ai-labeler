@@ -1,0 +1,80 @@
+version: 2
+
+project_name: ai-labeler
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: ai-labeler
+    main: ./cmd/ai-labeler
+    binary: ai-labeler
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.buildTime={{ .Date }} -X main.gitCommit={{ .Commit }}
+
+archives:
+  - id: release-archives
+    ids:
+      - ai-labeler
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- if eq .Os "darwin" }}Darwin
+      {{- else if eq .Os "linux" }}Linux
+      {{- else if eq .Os "windows" }}Windows
+      {{- else }}{{ .Os }}
+      {{- end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}
+      {{- end }}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: checksums.txt
+
+source:
+  enabled: true
+  name_template: "{{ .ProjectName }}_{{ .Version }}_source"
+
+nfpms:
+  - id: linux-packages
+    ids:
+      - ai-labeler
+    package_name: ai-labeler
+    homepage: https://github.com/drpaneas/ai-labeler
+    maintainer: Panagiotis Georgiadis
+    description: Ask an LLM to label your JIRA tickets.
+    license: MIT
+    vendor: drpaneas
+    section: utils
+    priority: optional
+    bindir: /usr/bin
+    formats:
+      - deb
+      - rpm
+    contents:
+      - src: ./LICENSE
+        dst: /usr/share/licenses/ai-labeler/LICENSE
+      - src: ./README.md
+        dst: /usr/share/doc/ai-labeler/README.md
+
+sboms:
+  - id: archive-sboms
+    artifacts: archive
+  - id: package-sboms
+    artifacts: package
