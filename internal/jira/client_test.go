@@ -1,7 +1,6 @@
 package jira
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -105,10 +104,10 @@ func TestExtractDescription(t *testing.T) {
 
 func TestNewClient(t *testing.T) {
 	tests := []struct {
-		name      string
-		baseURL   string
-		auth      Authenticator
-		wantErr   bool
+		name    string
+		baseURL string
+		auth    Authenticator
+		wantErr bool
 	}{
 		{
 			name:    "empty base URL",
@@ -163,6 +162,8 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClient_GetIssue(t *testing.T) {
+	ctx := t.Context()
+
 	// Mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "" {
@@ -174,7 +175,7 @@ func TestClient_GetIssue(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		
+
 		if strings.Contains(r.URL.Path, "TEST-401") {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -193,7 +194,9 @@ func TestClient_GetIssue(t *testing.T) {
 		issue.Fields.Description = "Test Description"
 		issue.Fields.Labels = []string{"bug", "urgent"}
 
-		json.NewEncoder(w).Encode(issue)
+		if err := json.NewEncoder(w).Encode(issue); err != nil {
+			t.Errorf("failed to encode issue response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -246,9 +249,8 @@ func TestClient_GetIssue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
 			issue, err := client.GetIssue(ctx, tt.issueKey)
-			
+
 			if tt.wantErr {
 				if err == nil {
 					t.Error("GetIssue() expected error but got none")
@@ -258,7 +260,7 @@ func TestClient_GetIssue(t *testing.T) {
 					t.Errorf("GetIssue() unexpected error = %v", err)
 				}
 			}
-			
+
 			if tt.wantIssue {
 				if issue == nil {
 					t.Error("GetIssue() expected issue but got nil")
@@ -276,6 +278,7 @@ func TestClient_GetIssue(t *testing.T) {
 }
 
 func TestClient_UpdateIssueLabels(t *testing.T) {
+	ctx := t.Context()
 	requestReceived := false
 	var receivedLabels []string
 
@@ -342,10 +345,9 @@ func TestClient_UpdateIssueLabels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			requestReceived = false
 			receivedLabels = nil
-			
-			ctx := context.Background()
+
 			err := client.UpdateIssueLabels(ctx, tt.issueKey, tt.labels)
-			
+
 			if tt.wantErr {
 				if err == nil {
 					t.Error("UpdateIssueLabels() expected error but got none")
@@ -363,6 +365,83 @@ func TestClient_UpdateIssueLabels(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestWithHTTPClient(t *testing.T) {
+	custom := &http.Client{Timeout: 5 * time.Second}
+	client, err := NewClient("https://test.atlassian.net", NewBearerAuth("tok"), WithHTTPClient(custom))
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	if client.httpClient != custom {
+		t.Error("WithHTTPClient() did not set custom HTTP client")
+	}
+}
+
+func TestClassifyResponse_RateLimit(t *testing.T) {
+	ctx := t.Context()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	retryConfig := &retry.Config{
+		MaxRetries:     0,
+		InitialBackoff: 1 * time.Millisecond,
+		MaxBackoff:     1 * time.Millisecond,
+		Multiplier:     1.0,
+	}
+	client, _ := NewClient(server.URL, NewBearerAuth("tok"), WithRetryConfig(retryConfig))
+	_, err := client.GetIssue(ctx, "TEST-429")
+	if err == nil {
+		t.Error("expected error for 429")
+	}
+	if !strings.Contains(err.Error(), "rate limit") {
+		t.Errorf("expected rate limit error, got: %v", err)
+	}
+}
+
+func TestClassifyResponse_UnexpectedStatus(t *testing.T) {
+	ctx := t.Context()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+		if _, err := w.Write([]byte("I'm a teapot")); err != nil {
+			t.Errorf("failed to write response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	retryConfig := &retry.Config{
+		MaxRetries:     0,
+		InitialBackoff: 1 * time.Millisecond,
+		MaxBackoff:     1 * time.Millisecond,
+		Multiplier:     1.0,
+	}
+	client, _ := NewClient(server.URL, NewBearerAuth("tok"), WithRetryConfig(retryConfig))
+	_, err := client.GetIssue(ctx, "TEST-418")
+	if err == nil {
+		t.Error("expected error for 418")
+	}
+	if !strings.Contains(err.Error(), "418") {
+		t.Errorf("expected status code in error, got: %v", err)
+	}
+}
+
+func TestExtractDescription_TopLevelArray(t *testing.T) {
+	desc := []any{
+		map[string]any{"text": "from array"},
+	}
+	got := ExtractDescription(desc)
+	if got != "from array" {
+		t.Errorf("ExtractDescription([]any) = %q, want %q", got, "from array")
+	}
+}
+
+func TestExtractDescription_UnknownType(t *testing.T) {
+	got := ExtractDescription(42)
+	if got != "" {
+		t.Errorf("ExtractDescription(int) = %q, want empty", got)
 	}
 }
 
@@ -416,7 +495,7 @@ func TestAuthenticators(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req, _ := http.NewRequest("GET", "http://test.com", nil)
 			err := tt.auth.SetAuth(req)
-			
+
 			if tt.wantErr {
 				if err == nil {
 					t.Error("SetAuth() expected error but got none")

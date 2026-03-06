@@ -9,7 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/drpaneas/ai-labeler/internal/config"
 	"github.com/drpaneas/ai-labeler/internal/jira"
@@ -17,7 +16,7 @@ import (
 
 // MockJIRAClient for testing
 type MockJIRAClient struct {
-	GetIssueFunc         func(ctx context.Context, issueKey string) (*jira.Issue, error)
+	GetIssueFunc          func(ctx context.Context, issueKey string) (*jira.Issue, error)
 	UpdateIssueLabelsFunc func(ctx context.Context, issueKey string, labels []string) error
 }
 
@@ -53,15 +52,15 @@ func TestLabeler_ShouldAddLabel(t *testing.T) {
 			{Name: "feature", Description: "New features"},
 		},
 	}
-	
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	l := New(cfg, nil, nil, logger, false)
 
 	tests := []struct {
-		name           string
-		currentLabels  []string
-		wantAddLabel   bool
-		wantReason     string
+		name          string
+		currentLabels []string
+		wantAddLabel  bool
+		wantReason    string
 	}{
 		{
 			name:          "no labels",
@@ -98,7 +97,7 @@ func TestLabeler_ShouldAddLabel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotAdd, gotReason := l.shouldAddLabel(tt.currentLabels)
-			
+
 			if gotAdd != tt.wantAddLabel {
 				t.Errorf("shouldAddLabel() add = %v, want %v", gotAdd, tt.wantAddLabel)
 			}
@@ -116,7 +115,7 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 			{Name: "feature", Description: "New features"},
 		},
 	}
-	
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	tests := []struct {
@@ -145,13 +144,13 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 						return nil
 					},
 				}
-				
+
 				llmProvider := &MockLLMProvider{
 					AnalyzeFunc: func(ctx context.Context, summary, description, labelInfo string, validLabels []string) (string, error) {
 						return "bug", nil
 					},
 				}
-				
+
 				return jiraClient, llmProvider
 			},
 			dryRun: false,
@@ -178,13 +177,13 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 						return errors.New("should not be called in dry run")
 					},
 				}
-				
+
 				llmProvider := &MockLLMProvider{
 					AnalyzeFunc: func(ctx context.Context, summary, description, labelInfo string, validLabels []string) (string, error) {
 						return "feature", nil
 					},
 				}
-				
+
 				return jiraClient, llmProvider
 			},
 			dryRun: true,
@@ -207,13 +206,13 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 						return issue, nil
 					},
 				}
-				
+
 				llmProvider := &MockLLMProvider{
 					AnalyzeFunc: func(ctx context.Context, summary, description, labelInfo string, validLabels []string) (string, error) {
 						return "", errors.New("should not be called for already labeled issues")
 					},
 				}
-				
+
 				return jiraClient, llmProvider
 			},
 			dryRun: false,
@@ -234,9 +233,9 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 						return nil, errors.New("issue not found")
 					},
 				}
-				
+
 				llmProvider := &MockLLMProvider{}
-				
+
 				return jiraClient, llmProvider
 			},
 			dryRun: false,
@@ -257,13 +256,13 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 						return issue, nil
 					},
 				}
-				
+
 				llmProvider := &MockLLMProvider{
 					AnalyzeFunc: func(ctx context.Context, summary, description, labelInfo string, validLabels []string) (string, error) {
 						return "", errors.New("LLM service unavailable")
 					},
 				}
-				
+
 				return jiraClient, llmProvider
 			},
 			dryRun: false,
@@ -285,10 +284,10 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 				logger:      logger,
 				dryRun:      tt.dryRun,
 			}
-			
-			ctx := context.Background()
+
+			ctx := t.Context()
 			result := l.processSingleTicket(ctx, "TEST", tt.ticketNum)
-			
+
 			// Check key fields
 			if result.Ticket != tt.wantResult.Ticket {
 				t.Errorf("processSingleTicket() ticket = %v, want %v", result.Ticket, tt.wantResult.Ticket)
@@ -305,7 +304,7 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 			if result.SkipReason != tt.wantResult.SkipReason {
 				t.Errorf("processSingleTicket() skipReason = %v, want %v", result.SkipReason, tt.wantResult.SkipReason)
 			}
-			
+
 			// Check error presence (not exact match due to wrapping)
 			if tt.wantResult.Error != nil && result.Error == nil {
 				t.Error("processSingleTicket() expected error but got none")
@@ -313,7 +312,7 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 			if tt.wantResult.Error == nil && result.Error != nil {
 				t.Errorf("processSingleTicket() unexpected error = %v", result.Error)
 			}
-			
+
 			// Check processing time is set
 			if result.ProcessTime == 0 {
 				t.Error("processSingleTicket() ProcessTime not set")
@@ -323,17 +322,18 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 }
 
 func TestLabeler_ProcessTickets(t *testing.T) {
+	ctx := t.Context()
 	cfg := &config.Config{
 		Labels: []config.LabelConfig{
 			{Name: "bug", Description: "Bug fixes"},
 		},
 	}
-	
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	
+
 	var mu sync.Mutex
 	var processedTickets []string
-	
+
 	jiraClient := &MockJIRAClient{
 		GetIssueFunc: func(ctx context.Context, issueKey string) (*jira.Issue, error) {
 			mu.Lock()
@@ -348,15 +348,15 @@ func TestLabeler_ProcessTickets(t *testing.T) {
 			return nil
 		},
 	}
-	
+
 	llmProvider := &MockLLMProvider{
 		AnalyzeFunc: func(ctx context.Context, summary, description, labelInfo string, validLabels []string) (string, error) {
 			return "bug", nil
 		},
 	}
-	
+
 	l := New(cfg, jiraClient, llmProvider, logger, false)
-	
+
 	tests := []struct {
 		name        string
 		start       int
@@ -425,27 +425,26 @@ func TestLabeler_ProcessTickets(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			processedTickets = nil // Reset
-			
-			ctx := context.Background()
+
 			stats, results, err := l.ProcessTickets(ctx, "TEST", tt.start, tt.end, tt.workers)
-			
+
 			if err != nil {
 				t.Errorf("ProcessTickets() unexpected error = %v", err)
 			}
-			
+
 			if stats.Total != tt.wantTotal {
 				t.Errorf("ProcessTickets() total = %d, want %d", stats.Total, tt.wantTotal)
 			}
-			
+
 			// Check timing
 			if stats.EndTime.Before(stats.StartTime) {
 				t.Error("EndTime before StartTime")
 			}
-			
+
 			tt.checkResult(t, stats, results)
 		})
 	}
@@ -457,80 +456,176 @@ func TestLabeler_ProcessTickets_Cancellation(t *testing.T) {
 			{Name: "bug", Description: "Bug fixes"},
 		},
 	}
-	
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	
+
 	var processCount atomic.Int32
+	started := make(chan struct{}, 2)
 	jiraClient := &MockJIRAClient{
 		GetIssueFunc: func(ctx context.Context, issueKey string) (*jira.Issue, error) {
 			processCount.Add(1)
-			// Simulate slow processing
-			time.Sleep(100 * time.Millisecond)
-			
-			// Check for cancellation
 			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
+			case started <- struct{}{}:
 			default:
 			}
-			
-			issue := &jira.Issue{Key: issueKey}
-			issue.Fields.Summary = "Test"
-			issue.Fields.Labels = []string{}
-			return issue, nil
+			<-ctx.Done()
+			return nil, ctx.Err()
 		},
 	}
-	
+
 	llmProvider := &MockLLMProvider{
 		AnalyzeFunc: func(ctx context.Context, summary, description, labelInfo string, validLabels []string) (string, error) {
 			return "bug", nil
 		},
 	}
-	
+
 	l := New(cfg, jiraClient, llmProvider, logger, false)
-	
-	// Create cancellable context
-	ctx, cancel := context.WithCancel(context.Background())
-	
-	// Cancel after a short delay
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	type processResult struct {
+		stats   *Stats
+		results []Result
+		err     error
+	}
+	done := make(chan processResult, 1)
 	go func() {
-		time.Sleep(150 * time.Millisecond)
-		cancel()
+		stats, results, err := l.ProcessTickets(ctx, "TEST", 1, 10, 2)
+		done <- processResult{stats: stats, results: results, err: err}
 	}()
-	
-	stats, results, err := l.ProcessTickets(ctx, "TEST", 1, 10, 2)
+
+	for range 2 {
+		<-started
+	}
+	cancel()
+
+	outcome := <-done
+	stats, results, err := outcome.stats, outcome.results, outcome.err
 
 	if err != nil {
 		t.Errorf("ProcessTickets() unexpected error = %v", err)
 	}
 
-	// Cancellation should cause some tickets to fail
-	if stats.Failed == 0 {
-		t.Error("ProcessTickets() expected some failed tickets from cancellation")
+	if stats.Processed != 2 {
+		t.Errorf("ProcessTickets() processed = %d, want 2", stats.Processed)
 	}
-
-	// Should have processed some but not all tickets
 	pc := int(processCount.Load())
-	if pc >= 10 {
-		t.Error("ProcessTickets() processed all tickets despite cancellation")
+	if pc != 2 {
+		t.Errorf("ProcessTickets() started = %d, want 2", pc)
 	}
-	if pc == 0 {
-		t.Error("ProcessTickets() processed no tickets")
+	if stats.Failed != 2 {
+		t.Errorf("ProcessTickets() failed = %d, want 2", stats.Failed)
+	}
+	if len(results) != 2 {
+		t.Errorf("ProcessTickets() results = %d, want 2", len(results))
+	}
+}
+
+func TestLabeler_ProcessSingleTicket_EmptyLabel(t *testing.T) {
+	cfg := &config.Config{
+		Labels: []config.LabelConfig{{Name: "bug", Description: "d"}},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	jiraClient := &MockJIRAClient{
+		GetIssueFunc: func(ctx context.Context, issueKey string) (*jira.Issue, error) {
+			issue := &jira.Issue{Key: issueKey}
+			issue.Fields.Summary = "s"
+			issue.Fields.Labels = []string{}
+			return issue, nil
+		},
+	}
+	llmProvider := &MockLLMProvider{
+		AnalyzeFunc: func(ctx context.Context, summary, description, labelInfo string, validLabels []string) (string, error) {
+			return "", nil
+		},
 	}
 
-	// Results should not exceed processed count
-	if len(results) > pc {
-		t.Errorf("More results (%d) than processed tickets (%d)", len(results), pc)
+	l := New(cfg, jiraClient, llmProvider, logger, false)
+	result := l.processSingleTicket(t.Context(), "TEST", 1)
+	if result.Error == nil {
+		t.Error("expected error for empty label")
+	}
+}
+
+func TestLabeler_ProcessSingleTicket_UpdateError(t *testing.T) {
+	cfg := &config.Config{
+		Labels: []config.LabelConfig{{Name: "bug", Description: "d"}},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	jiraClient := &MockJIRAClient{
+		GetIssueFunc: func(ctx context.Context, issueKey string) (*jira.Issue, error) {
+			issue := &jira.Issue{Key: issueKey}
+			issue.Fields.Summary = "s"
+			issue.Fields.Labels = []string{}
+			return issue, nil
+		},
+		UpdateIssueLabelsFunc: func(ctx context.Context, issueKey string, labels []string) error {
+			return errors.New("permission denied")
+		},
+	}
+	llmProvider := &MockLLMProvider{
+		AnalyzeFunc: func(ctx context.Context, summary, description, labelInfo string, validLabels []string) (string, error) {
+			return "bug", nil
+		},
+	}
+
+	l := New(cfg, jiraClient, llmProvider, logger, false)
+	result := l.processSingleTicket(t.Context(), "TEST", 1)
+	if result.Error == nil {
+		t.Error("expected error when update fails")
+	}
+	if result.Success {
+		t.Error("should not be success when update fails")
+	}
+}
+
+func TestLabeler_ProcessSequentially_Cancellation(t *testing.T) {
+	cfg := &config.Config{
+		Labels: []config.LabelConfig{{Name: "bug", Description: "d"}},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	var called atomic.Int32
+	jiraClient := &MockJIRAClient{
+		GetIssueFunc: func(ctx context.Context, issueKey string) (*jira.Issue, error) {
+			called.Add(1)
+			issue := &jira.Issue{Key: issueKey}
+			issue.Fields.Summary = "s"
+			issue.Fields.Labels = []string{}
+			return issue, nil
+		},
+	}
+	llmProvider := &MockLLMProvider{
+		AnalyzeFunc: func(ctx context.Context, summary, description, labelInfo string, validLabels []string) (string, error) {
+			return "bug", nil
+		},
+	}
+
+	l := New(cfg, jiraClient, llmProvider, logger, false)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	stats, results, _ := l.ProcessTickets(ctx, "TEST", 1, 5, 1)
+	if stats.Processed != 0 {
+		t.Errorf("ProcessTickets() processed = %d, want 0", stats.Processed)
+	}
+	if len(results) != 0 {
+		t.Errorf("ProcessTickets() results = %d, want 0", len(results))
+	}
+	if called.Load() != 0 {
+		t.Errorf("GetIssue() called %d times, want 0", called.Load())
 	}
 }
 
 func TestUpdateStats(t *testing.T) {
 	stats := &Stats{}
-	
+
 	tests := []struct {
-		name       string
-		result     Result
-		wantStats  Stats
+		name      string
+		result    Result
+		wantStats Stats
 	}{
 		{
 			name: "successful label",
@@ -566,12 +661,12 @@ func TestUpdateStats(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stats = &Stats{} // Reset
 			updateStats(stats, &tt.result)
-			
+
 			if stats.Processed != tt.wantStats.Processed {
 				t.Errorf("Processed = %d, want %d", stats.Processed, tt.wantStats.Processed)
 			}

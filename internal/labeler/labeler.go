@@ -46,13 +46,13 @@ type Result struct {
 
 // Stats represents overall processing statistics
 type Stats struct {
-	Total      int
-	Processed  int
-	Labeled    int
-	Skipped    int
-	Failed     int
-	StartTime  time.Time
-	EndTime    time.Time
+	Total     int
+	Processed int
+	Labeled   int
+	Skipped   int
+	Failed    int
+	StartTime time.Time
+	EndTime   time.Time
 }
 
 // New creates a new Labeler instance
@@ -101,16 +101,16 @@ func (l *Labeler) processSequentially(ctx context.Context, projectKey string, ti
 	results := make([]Result, len(tickets))
 
 	for i, ticketNum := range tickets {
-		result := l.processSingleTicket(ctx, projectKey, ticketNum)
-		results[i] = result
-		updateStats(stats, &result)
-
 		select {
 		case <-ctx.Done():
 			l.logger.Warn("Processing cancelled", "at_ticket", ticketNum)
-			return results[:i+1]
+			return results[:i]
 		default:
 		}
+
+		result := l.processSingleTicket(ctx, projectKey, ticketNum)
+		results[i] = result
+		updateStats(stats, &result)
 	}
 
 	return results
@@ -121,12 +121,10 @@ func (l *Labeler) processConcurrently(ctx context.Context, projectKey string, ti
 	resultChan := make(chan Result, workers)
 
 	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
-			l.worker(ctx, workerID, projectKey, ticketChan, resultChan)
-		}(i)
+	for i := range workers {
+		wg.Go(func() {
+			l.worker(ctx, i, projectKey, ticketChan, resultChan)
+		})
 	}
 
 	go func() {
@@ -258,7 +256,7 @@ func (l *Labeler) shouldAddLabel(currentLabels []string) (bool, string) {
 // updateStats must be called from a single goroutine; it is not safe for concurrent use.
 func updateStats(stats *Stats, result *Result) {
 	stats.Processed++
-	
+
 	if result.Skipped {
 		stats.Skipped++
 	} else if result.Error != nil {

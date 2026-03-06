@@ -100,8 +100,7 @@ func DoWithNotify(ctx context.Context, cfg *Config, fn RetryableFunc, notify fun
 
 		lastErr = err
 
-		var retryErr RetryableError
-		if errors.As(err, &retryErr) && !retryErr.IsRetryable() {
+		if retryErr, ok := errors.AsType[RetryableError](err); ok && !retryErr.IsRetryable() {
 			return err
 		}
 

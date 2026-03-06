@@ -25,8 +25,8 @@ type Provider interface {
 
 type structuredResponse struct {
 	Label      string `json:"label"`
-	Confidence string `json:"confidence,omitempty"`
-	Reasoning  string `json:"reasoning,omitempty"`
+	Confidence string `json:"confidence,omitzero"`
+	Reasoning  string `json:"reasoning,omitzero"`
 }
 
 type baseProvider struct {
@@ -180,10 +180,10 @@ func (p *baseProvider) parseStructuredResponse(response string) (string, error) 
 
 	startIdx := strings.Index(response, "{")
 	endIdx := strings.LastIndex(response, "}")
-	
+
 	if startIdx >= 0 && endIdx > startIdx {
 		jsonStr := response[startIdx : endIdx+1]
-		
+
 		var structured structuredResponse
 		if err := json.Unmarshal([]byte(jsonStr), &structured); err == nil {
 			p.logger.Debug("Successfully parsed structured response",
@@ -193,7 +193,7 @@ func (p *baseProvider) parseStructuredResponse(response string) (string, error) 
 			return strings.TrimSpace(structured.Label), nil
 		}
 	}
-	
+
 	return "", fmt.Errorf("could not parse structured response")
 }
 
@@ -251,7 +251,7 @@ func containsWordSequence(words, seq []string) bool {
 
 func stripPunctuation(s string) string {
 	return strings.TrimFunc(s, func(r rune) bool {
-		return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_')
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '_'
 	})
 }
 

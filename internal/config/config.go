@@ -21,7 +21,7 @@ type JIRAConfig struct {
 
 type LLMConfig struct {
 	Provider string `json:"provider"`
-	Model    string `json:"model,omitempty"`
+	Model    string `json:"model,omitzero"`
 }
 
 // Config holds the application configuration. Use LoadConfig to create a
@@ -81,7 +81,7 @@ func (c *Config) Validate() error {
 		}
 		labelNames[lower] = true
 	}
-	
+
 	if c.JIRA.URL == "" {
 		return fmt.Errorf("must specify 'jira.url'")
 	}

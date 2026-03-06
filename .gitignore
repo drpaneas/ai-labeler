@@ -23,6 +23,9 @@ Thumbs.db
 # Config files with sensitive data
 config.json
 !config-example.json
+.env
+.env.*
+!.env.example
 
 # Database files
 *.db
@@ -45,3 +48,4 @@ vendor/
 
 # Go workspace file
 go.work
+go.work.sum
