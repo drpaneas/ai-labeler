@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -170,7 +170,11 @@ func queryJIRA(url string) (summary, description string, labels []string) {
 	if err != nil {
 		log.Fatalf("Error making HTTP request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Error closing response body: %v", err)
+		}
+	}()
 
 	// Check if the response status is OK.
 	if resp.StatusCode != http.StatusOK {
@@ -178,7 +182,7 @@ func queryJIRA(url string) (summary, description string, labels []string) {
 	}
 
 	// Read the response body.
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatalf("Error reading response body: %v", err)
 	}
@@ -228,7 +232,11 @@ func updateJIRALabels(url string, labels []string) error {
 	if err != nil {
 		return fmt.Errorf("error making HTTP request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("error closing response body: %v", err)
+		}
+	}()
 
 	// Check if the response status is OK.
 	if resp.StatusCode != http.StatusNoContent {

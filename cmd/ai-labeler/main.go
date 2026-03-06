@@ -134,7 +134,7 @@ func setupLogger(verbose bool, jsonFormat bool) *slog.Logger {
 	}
 
 	opts := &slog.HandlerOptions{
-		Level: level,
+		Level:     level,
 		AddSource: verbose,
 	}
 

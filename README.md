@@ -1,91 +1,91 @@
-# JIRA Ticket Labeler with LocalAI
+# ai-labeler
 
-This project automatically applies appropriate labels to JIRA tickets based on their content using AI analysis. It uses LocalAI as the LLM provider for local inference instead of relying on OpenAI's cloud services.
+`ai-labeler` labels JIRA tickets with help from an LLM.
+It reads ticket text, chooses one label from your config, and writes it back.
+Supported providers are OpenAI, Gemini, and Claude.
 
-## Features
+## Why this tool
 
-- Automatically reviews JIRA tickets without labels
-- Uses AI to analyze ticket content and suggest appropriate labels
-- Works with LocalAI for fully local/on-premises inference
-- Applies selected labels directly to JIRA tickets
+In projects that track work by type (feature, maintenance, quality, support, and so on), unlabeled tickets break dashboards and metrics. This tool keeps labels consistent at scale by having an LLM pick the right label from your definitions.
 
-## Prerequisites
+## Requirements
 
-- Go 1.18 or later
-- A running LocalAI instance (see [LocalAI documentation](https://localai.io/basics/getting_started/))
-- JIRA API access token
+- Go 1.26+
+- JIRA Cloud URL and project key
+- `JIRA_API_TOKEN`
+- one of `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
 
-## Setup LocalAI
+Auth mode:
+- if `JIRA_EMAIL` is set, use Basic auth
+- otherwise, use Bearer auth with `JIRA_API_TOKEN`
 
-1. Install and run LocalAI following the [official documentation](https://localai.io/basics/getting_started/).
-
-2. Start a LocalAI server with a model that supports chat completions. For example:
-
-```bash
-# Using Docker
-docker run -ti --name local-ai -p 8080:8080 localai/localai:latest-cpu
-
-# Or using the installer
-curl https://localai.io/install.sh | sh
-local-ai run llama-3.2-1b-instruct:q4_k_m  # Or any other compatible model
-```
-
-3. Ensure your model is configured for chat completions and is running correctly.
-
-## Configuration
-
-The application requires the following environment variables:
+## Build
 
 ```bash
-# Set your JIRA API token
-export JIRA_API_TOKEN=your_jira_api_token_here
-
-# Set LocalAI endpoint (defaults to http://localhost:8080/v1 if not set)
-export LOCALAI_API_URL=http://localhost:8080/v1
+make build
 ```
 
-## Compatible LLMs
+This produces `./ai-labeler`.
 
-LocalAI supports various models that can be used with this application:
+## Configure
 
-- Llama-based models (llama-3.2-1b-instruct, llama2, etc.)
-- Mistral models
-- Phi-2
-- Gemma
-- Any other model LocalAI supports that can handle chat completions
+Create `config.json` (see `config-example.json`):
 
-Choose a model that offers good performance on classification tasks. Smaller models like Phi-2, Gemma 2B, or Llama-3.2-1b-instruct may be sufficient for this text classification use case.
+```json
+{
+  "labels": [
+    { "name": "quality", "description": "tests and QA work" },
+    { "name": "feature", "description": "new functionality" }
+  ],
+  "jira": {
+    "url": "https://your-domain.atlassian.net",
+    "project": "YOUR_PROJECT"
+  },
+  "llm": {
+    "provider": "gemini",
+    "model": "gemini-2.5-flash"
+  }
+}
+```
 
-## Running the Application
+Rules:
+- `labels` must not be empty
+- label names must be unique
+- each label needs a description
+
+Optional overrides:
+- `CONFIG_FILE`
+- `JIRA_URL`
+- `JIRA_PROJECT`
+- `LLM_PROVIDER`
+- `LLM_MODEL`
+
+## Run
+
+One ticket:
 
 ```bash
-go run main.go
+./ai-labeler --ticket 105
 ```
 
-The application will:
-1. Query JIRA tickets within the specified range
-2. Check if they have labels from our predefined set
-3. For tickets without appropriate labels, use LocalAI to analyze content and suggest a label
-4. Apply the suggested label to the JIRA ticket
+Range:
 
-## Customizing Labels
+```bash
+./ai-labeler --start 100 --end 200 --workers 5
+```
 
-These labels are used for Developer Sandbox
+Dry run:
 
-The current set of labels the system works with includes:
-- quality - for tests, QA, QE, end-to-end or performance testing
-- feature - for new tasks and feature implementations
-- support - for tasks involving direct communication
-- maintenance - for routine upkeep and automation
-- alerts - for alert management tasks
-- security - for security-related tasks
-- aws-abuse - for AWS abuse reports
+```bash
+./ai-labeler --start 100 --end 105 --dry-run
+```
 
-To modify these labels, edit the `labelInfo` variable in the `run()` function.
+Useful flags: `--config`, `--project`, `--verbose`, `--json-log`, `--version`.
 
-## Troubleshooting
+## Checks
 
-- **LocalAI Connection Issues**: Ensure your LocalAI instance is running and accessible at the configured URL.
-- **Model Selection**: If you're getting poor results, try using a different model with LocalAI.
-- **Resource Usage**: Smaller models will use fewer resources but may provide less accurate results.
+```bash
+make check
+go test -race ./...
+```
 

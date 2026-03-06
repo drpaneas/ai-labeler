@@ -143,7 +143,7 @@ func TestLoadConfig(t *testing.T) {
 
 			// Load config
 			cfg, err := LoadConfig(configPath)
-			
+
 			// Check error expectation
 			if tt.wantErr {
 				if err == nil {
@@ -314,11 +314,11 @@ func TestConfig_LabelByName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			label, found := cfg.LabelByName(tt.searchFor)
-			
+
 			if found != tt.wantFound {
 				t.Errorf("LabelByName(%s) found = %v, want %v", tt.searchFor, found, tt.wantFound)
 			}
-			
+
 			if found && label.Name != tt.wantName {
 				t.Errorf("LabelByName(%s) returned %s, want %s", tt.searchFor, label.Name, tt.wantName)
 			}
@@ -333,5 +333,76 @@ func TestConfigFileNotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "required but not found") {
 		t.Errorf("LoadConfig() error message should mention file is required")
+	}
+}
+
+func TestLoadConfig_InvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(path, []byte("{not json}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("LoadConfig() expected error for invalid JSON")
+	}
+	if !strings.Contains(err.Error(), "parsing") {
+		t.Errorf("expected parsing error, got: %v", err)
+	}
+}
+
+func TestLoadConfig_EnvVar(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "env.json")
+	if err := os.WriteFile(path, []byte(`{
+		"labels": [{"name":"a","description":"d"}],
+		"jira": {"url":"https://x.com","project":"P"},
+		"llm": {"provider":"openai"}
+	}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CONFIG_FILE", path)
+	cfg, err := LoadConfig("")
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if cfg.JIRA.Project != "P" {
+		t.Errorf("project = %q, want %q", cfg.JIRA.Project, "P")
+	}
+}
+
+func TestValidate_MissingProject(t *testing.T) {
+	cfg := &Config{
+		Labels: []LabelConfig{{Name: "a", Description: "d"}},
+		JIRA:   JIRAConfig{URL: "https://x.com"},
+		LLM:    LLMConfig{Provider: "openai"},
+	}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "jira.project") {
+		t.Errorf("expected jira.project error, got: %v", err)
+	}
+}
+
+func TestValidate_MissingProvider(t *testing.T) {
+	cfg := &Config{
+		Labels: []LabelConfig{{Name: "a", Description: "d"}},
+		JIRA:   JIRAConfig{URL: "https://x.com", Project: "P"},
+		LLM:    LLMConfig{},
+	}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "llm.provider") {
+		t.Errorf("expected llm.provider error, got: %v", err)
+	}
+}
+
+func TestValidate_LabelWithoutDescription(t *testing.T) {
+	cfg := &Config{
+		Labels: []LabelConfig{{Name: "a"}},
+		JIRA:   JIRAConfig{URL: "https://x.com", Project: "P"},
+		LLM:    LLMConfig{Provider: "openai"},
+	}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "must have a description") {
+		t.Errorf("expected description error, got: %v", err)
 	}
 }

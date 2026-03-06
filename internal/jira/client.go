@@ -113,9 +113,9 @@ func NewClient(baseURL string, auth Authenticator, opts ...ClientOption) (*Clien
 type Issue struct {
 	Key    string `json:"key"`
 	Fields struct {
-		Summary     string      `json:"summary"`
-		Description any `json:"description"` // Can be string or JIRA document object
-		Labels      []string    `json:"labels"`
+		Summary     string   `json:"summary"`
+		Description any      `json:"description"` // Can be string or JIRA document object
+		Labels      []string `json:"labels"`
 	} `json:"fields"`
 }
 
@@ -126,7 +126,10 @@ type IssueUpdate struct {
 }
 
 func classifyResponse(resp *http.Response, issueKey string) error {
-	defer io.Copy(io.Discard, resp.Body)
+	defer func() {
+		// Best-effort drain to allow connection reuse.
+		_, _ = io.Copy(io.Discard, resp.Body)
+	}()
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
@@ -154,7 +157,7 @@ func (c *Client) GetIssue(ctx context.Context, issueKey string) (*Issue, error) 
 	var issue Issue
 	err := retry.DoWithNotify(ctx, c.retry, func() error {
 		url := fmt.Sprintf("%s/rest/api/3/issue/%s", c.baseURL, issueKey)
-		
+
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
 			return retry.NonRetryable(fmt.Errorf("creating request: %w", err))
@@ -169,7 +172,13 @@ func (c *Client) GetIssue(ctx context.Context, issueKey string) (*Issue, error) 
 		if err != nil {
 			return retry.Retryable(fmt.Errorf("making request: %w", err))
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				c.logger.Debug("Failed to close JIRA response body",
+					"error", err,
+					"issue", issueKey)
+			}
+		}()
 
 		if resp.StatusCode != http.StatusOK {
 			return classifyResponse(resp, issueKey)
@@ -226,7 +235,13 @@ func (c *Client) UpdateIssueLabels(ctx context.Context, issueKey string, labels 
 		if err != nil {
 			return retry.Retryable(fmt.Errorf("making request: %w", err))
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				c.logger.Debug("Failed to close JIRA response body",
+					"error", err,
+					"issue", issueKey)
+			}
+		}()
 
 		if resp.StatusCode == http.StatusNoContent {
 			return nil
