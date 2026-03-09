@@ -2,10 +2,10 @@ package jira
 
 import (
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -139,6 +139,24 @@ func TestNewClient(t *testing.T) {
 			auth:    NewBearerAuth("test-token"),
 			wantErr: false,
 		},
+		{
+			name:    "rejects http",
+			baseURL: "http://test.atlassian.net",
+			auth:    NewBearerAuth("test-token"),
+			wantErr: true,
+		},
+		{
+			name:    "rejects path",
+			baseURL: "https://test.atlassian.net/rest/api/3",
+			auth:    NewBearerAuth("test-token"),
+			wantErr: true,
+		},
+		{
+			name:    "rejects query string",
+			baseURL: "https://test.atlassian.net?x=1",
+			auth:    NewBearerAuth("test-token"),
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -165,7 +183,7 @@ func TestClient_GetIssue(t *testing.T) {
 	ctx := t.Context()
 
 	// Mock server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "" {
 			t.Error("Missing Authorization header")
 		}
@@ -209,7 +227,8 @@ func TestClient_GetIssue(t *testing.T) {
 
 	client, err := NewClient(server.URL, NewBearerAuth("test-token"),
 		WithRetryConfig(retryConfig),
-		WithLogger(slog.New(slog.NewTextHandler(os.Stdout, nil))),
+		WithHTTPClient(server.Client()),
+		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
@@ -283,7 +302,7 @@ func TestClient_UpdateIssueLabels(t *testing.T) {
 	var receivedLabels []string
 
 	// Mock server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "PUT" {
 			t.Errorf("Request method = %s, want PUT", r.Method)
 		}
@@ -310,7 +329,7 @@ func TestClient_UpdateIssueLabels(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(server.URL, NewBearerAuth("test-token"))
+	client, err := NewClient(server.URL, NewBearerAuth("test-token"), WithHTTPClient(server.Client()))
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -381,7 +400,7 @@ func TestWithHTTPClient(t *testing.T) {
 
 func TestClassifyResponse_RateLimit(t *testing.T) {
 	ctx := t.Context()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
 	defer server.Close()
@@ -392,7 +411,7 @@ func TestClassifyResponse_RateLimit(t *testing.T) {
 		MaxBackoff:     1 * time.Millisecond,
 		Multiplier:     1.0,
 	}
-	client, _ := NewClient(server.URL, NewBearerAuth("tok"), WithRetryConfig(retryConfig))
+	client, _ := NewClient(server.URL, NewBearerAuth("tok"), WithRetryConfig(retryConfig), WithHTTPClient(server.Client()))
 	_, err := client.GetIssue(ctx, "TEST-429")
 	if err == nil {
 		t.Error("expected error for 429")
@@ -404,7 +423,7 @@ func TestClassifyResponse_RateLimit(t *testing.T) {
 
 func TestClassifyResponse_UnexpectedStatus(t *testing.T) {
 	ctx := t.Context()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 		if _, err := w.Write([]byte("I'm a teapot")); err != nil {
 			t.Errorf("failed to write response: %v", err)
@@ -418,7 +437,7 @@ func TestClassifyResponse_UnexpectedStatus(t *testing.T) {
 		MaxBackoff:     1 * time.Millisecond,
 		Multiplier:     1.0,
 	}
-	client, _ := NewClient(server.URL, NewBearerAuth("tok"), WithRetryConfig(retryConfig))
+	client, _ := NewClient(server.URL, NewBearerAuth("tok"), WithRetryConfig(retryConfig), WithHTTPClient(server.Client()))
 	_, err := client.GetIssue(ctx, "TEST-418")
 	if err == nil {
 		t.Error("expected error for 418")

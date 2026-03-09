@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/drpaneas/ai-labeler/internal/jiraurl"
 	"github.com/drpaneas/ai-labeler/internal/retry"
 )
 
@@ -92,9 +93,13 @@ func NewClient(baseURL string, auth Authenticator, opts ...ClientOption) (*Clien
 	if auth == nil {
 		return nil, fmt.Errorf("authenticator is required")
 	}
+	normalizedBaseURL, err := jiraurl.Normalize(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %w", err)
+	}
 
 	client := &Client{
-		baseURL: strings.TrimSuffix(baseURL, "/"),
+		baseURL: normalizedBaseURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},

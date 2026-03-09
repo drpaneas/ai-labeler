@@ -69,11 +69,11 @@ echo
 
 # Example 5: Real run (with confirmation)
 echo "5. Process a ticket for real (this will modify JIRA):"
-echo "   Command: ./ai-labeler --config $CONFIG_FILE --ticket 1"
+echo "   Command: ./ai-labeler --config $CONFIG_FILE --ticket 1 --write"
 read -p "Do you want to run this command? (y/N) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    ./ai-labeler --config "$CONFIG_FILE" --ticket 1 || {
+    ./ai-labeler --config "$CONFIG_FILE" --ticket 1 --write || {
         echo "Note: This may fail if ticket 1 doesn't exist or already has labels"
     }
 else
@@ -85,6 +85,7 @@ echo "=== Example completed ==="
 echo
 echo "Tips:"
 echo "- Use --dry-run to preview changes without modifying JIRA"
+echo "- Use --write to apply labels to JIRA"
 echo "- Use --workers N for concurrent processing of large ranges"
 echo "- Use --verbose for detailed logging"
 echo "- Use --json-log for structured JSON output"

@@ -35,6 +35,8 @@
   },
   "llm": {
     "provider": "gemini",
-    "model": "gemini-2.5-flash"
+    "model": "gemini-2.5-flash",
+    "ticket_content_mode": "redacted",
+    "max_description_chars": 4000
   }
 }

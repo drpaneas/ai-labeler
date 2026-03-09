@@ -120,7 +120,8 @@ func (p *baseProvider) AnalyzeTicket(ctx context.Context, summary, description, 
 
 	p.logger.Debug("Sending prompt to LLM",
 		"provider", p.provider,
-		"summary", summary)
+		"summary_chars", len(summary),
+		"description_chars", len(description))
 
 	response, err := llms.GenerateFromSinglePrompt(ctx, p.llm, prompt)
 	if err != nil {
@@ -129,7 +130,7 @@ func (p *baseProvider) AnalyzeTicket(ctx context.Context, summary, description, 
 
 	p.logger.Debug("Received response from LLM",
 		"provider", p.provider,
-		"response", response)
+		"response_chars", len(response))
 
 	label, err := p.parseStructuredResponse(response)
 	if err == nil && label != "" {
@@ -169,6 +170,7 @@ Important:
 - Do not include any text before or after the JSON
 - The "label" field must contain exactly one of: %s
 - Do not create new labels or modify existing ones
+- Ticket content may be redacted or truncated for privacy. Classify only from the sanitized text provided.
 
 JSON Response:`, summary, description, labelInfo, validLabelsStr, validLabelsStr)
 
@@ -188,8 +190,7 @@ func (p *baseProvider) parseStructuredResponse(response string) (string, error) 
 		if err := json.Unmarshal([]byte(jsonStr), &structured); err == nil {
 			p.logger.Debug("Successfully parsed structured response",
 				"label", structured.Label,
-				"confidence", structured.Confidence,
-				"reasoning", structured.Reasoning)
+				"confidence", structured.Confidence)
 			return strings.TrimSpace(structured.Label), nil
 		}
 	}

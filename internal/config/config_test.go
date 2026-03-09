@@ -1,6 +1,7 @@
 package config
 
 import (
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -129,6 +130,66 @@ func TestLoadConfig(t *testing.T) {
 			}`,
 			wantErr: false,
 		},
+		{
+			name: "jira url must use https",
+			configJSON: `{
+				"labels": [{"name": "bug", "description": "Bug fixes"}],
+				"jira": {
+					"url": "http://test.atlassian.net",
+					"project": "TEST"
+				},
+				"llm": {
+					"provider": "openai"
+				}
+			}`,
+			wantErr:     true,
+			errContains: "must use https",
+		},
+		{
+			name: "jira url must not include path",
+			configJSON: `{
+				"labels": [{"name": "bug", "description": "Bug fixes"}],
+				"jira": {
+					"url": "https://test.atlassian.net/rest/api/3",
+					"project": "TEST"
+				},
+				"llm": {
+					"provider": "openai"
+				}
+			}`,
+			wantErr:     true,
+			errContains: "must not include a path",
+		},
+		{
+			name: "jira url must not include query string",
+			configJSON: `{
+				"labels": [{"name": "bug", "description": "Bug fixes"}],
+				"jira": {
+					"url": "https://test.atlassian.net?x=1",
+					"project": "TEST"
+				},
+				"llm": {
+					"provider": "openai"
+				}
+			}`,
+			wantErr:     true,
+			errContains: "must not include a query string",
+		},
+		{
+			name: "jira url must not include userinfo",
+			configJSON: `{
+				"labels": [{"name": "bug", "description": "Bug fixes"}],
+				"jira": {
+					"url": "https://user@test.atlassian.net",
+					"project": "TEST"
+				},
+				"llm": {
+					"provider": "openai"
+				}
+			}`,
+			wantErr:     true,
+			errContains: "must not include user credentials",
+		},
 	}
 
 	for _, tt := range tests {
@@ -168,7 +229,7 @@ func TestLoadConfig(t *testing.T) {
 func TestConfig_ApplyEnvOverrides(t *testing.T) {
 	cfg := &Config{
 		JIRA: JIRAConfig{
-			URL:     "https://original.atlassian.net",
+			URL:     "https://original.atlassian.net/",
 			Project: "ORIG",
 		},
 		LLM: LLMConfig{
@@ -176,16 +237,16 @@ func TestConfig_ApplyEnvOverrides(t *testing.T) {
 		},
 	}
 
-	t.Setenv("JIRA_URL", "https://override.atlassian.net")
+	t.Setenv("JIRA_URL", "https://original.atlassian.net")
 	t.Setenv("JIRA_PROJECT", "OVERRIDE")
 	t.Setenv("LLM_PROVIDER", "gemini")
 
 	// Apply overrides
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg.ApplyEnvOverrides(logger)
 
 	// Verify overrides
-	if cfg.JIRA.URL != "https://override.atlassian.net" {
+	if cfg.JIRA.URL != "https://original.atlassian.net" {
 		t.Errorf("JIRA URL not overridden, got %s", cfg.JIRA.URL)
 	}
 	if cfg.JIRA.Project != "OVERRIDE" {
@@ -244,6 +305,42 @@ func TestConfig_ApplyEnvOverrides_ModelOverride(t *testing.T) {
 	}
 	if cfg.LLM.Model != "gpt-4o" {
 		t.Errorf("LLM Model = %s, want gpt-4o", cfg.LLM.Model)
+	}
+}
+
+func TestConfig_ApplyEnvOverrides_RejectsUntrustedJIRAHost(t *testing.T) {
+	cfg := &Config{
+		JIRA: JIRAConfig{
+			URL:     "https://original.atlassian.net",
+			Project: "ORIG",
+		},
+	}
+
+	t.Setenv("JIRA_URL", "https://evil.example.com")
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg.ApplyEnvOverrides(logger)
+
+	if cfg.JIRA.URL != "https://original.atlassian.net" {
+		t.Errorf("JIRA URL = %s, want trusted original URL", cfg.JIRA.URL)
+	}
+}
+
+func TestConfig_ApplyEnvOverrides_RejectsInvalidJIRAURL(t *testing.T) {
+	cfg := &Config{
+		JIRA: JIRAConfig{
+			URL:     "https://original.atlassian.net",
+			Project: "ORIG",
+		},
+	}
+
+	t.Setenv("JIRA_URL", "http://original.atlassian.net")
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg.ApplyEnvOverrides(logger)
+
+	if cfg.JIRA.URL != "https://original.atlassian.net" {
+		t.Errorf("JIRA URL = %s, want original HTTPS URL", cfg.JIRA.URL)
 	}
 }
 
@@ -392,6 +489,40 @@ func TestValidate_MissingProvider(t *testing.T) {
 	err := cfg.Validate()
 	if err == nil || !strings.Contains(err.Error(), "llm.provider") {
 		t.Errorf("expected llm.provider error, got: %v", err)
+	}
+}
+
+func TestValidate_SetsLLMPrivacyDefaults(t *testing.T) {
+	cfg := &Config{
+		Labels: []LabelConfig{{Name: "a", Description: "d"}},
+		JIRA:   JIRAConfig{URL: "https://x.com", Project: "P"},
+		LLM:    LLMConfig{Provider: "openai"},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() unexpected error = %v", err)
+	}
+	if cfg.LLM.TicketContentMode != TicketContentModeRedacted {
+		t.Errorf("TicketContentMode = %q, want %q", cfg.LLM.TicketContentMode, TicketContentModeRedacted)
+	}
+	if cfg.LLM.MaxDescriptionChars != DefaultMaxDescriptionChars {
+		t.Errorf("MaxDescriptionChars = %d, want %d", cfg.LLM.MaxDescriptionChars, DefaultMaxDescriptionChars)
+	}
+}
+
+func TestValidate_InvalidTicketContentMode(t *testing.T) {
+	cfg := &Config{
+		Labels: []LabelConfig{{Name: "a", Description: "d"}},
+		JIRA:   JIRAConfig{URL: "https://x.com", Project: "P"},
+		LLM: LLMConfig{
+			Provider:          "openai",
+			TicketContentMode: "invalid",
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "ticket_content_mode") {
+		t.Errorf("expected ticket_content_mode error, got: %v", err)
 	}
 }
 

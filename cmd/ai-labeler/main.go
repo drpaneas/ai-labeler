@@ -5,10 +5,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -64,6 +64,7 @@ type options struct {
 	startTicket int
 	endTicket   int
 	dryRun      bool
+	write       bool
 	workers     int
 	verbose     bool
 	jsonLog     bool
@@ -71,37 +72,49 @@ type options struct {
 }
 
 func parseFlags() (*options, error) {
-	opts := &options{}
+	return parseFlagsFromArgs(os.Args[1:])
+}
 
-	flag.StringVar(&opts.configPath, "config", "", "Path to config file (default: config.json or CONFIG_FILE env var)")
-	flag.StringVar(&opts.projectKey, "project", "", "JIRA project key (overrides config and env var)")
-	flag.IntVar(&opts.ticket, "ticket", 0, "Single ticket number (alternative to start/end range)")
-	flag.IntVar(&opts.startTicket, "start", 0, "Starting ticket number")
-	flag.IntVar(&opts.endTicket, "end", 0, "Ending ticket number")
-	flag.BoolVar(&opts.dryRun, "dry-run", false, "Preview changes without applying them")
-	flag.IntVar(&opts.workers, "workers", 1, "Number of concurrent workers (default: 1)")
-	flag.BoolVar(&opts.verbose, "verbose", false, "Enable verbose logging")
-	flag.BoolVar(&opts.jsonLog, "json-log", false, "Output logs in JSON format")
-	flag.BoolVar(&opts.version, "version", false, "Show version information")
+func parseFlagsFromArgs(args []string) (*options, error) {
+	opts := &options{}
+	flagSet := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	flagSet.SetOutput(io.Discard)
+
+	flagSet.StringVar(&opts.configPath, "config", "", "Path to config file (default: config.json or CONFIG_FILE env var)")
+	flagSet.StringVar(&opts.projectKey, "project", "", "JIRA project key (overrides config and env var)")
+	flagSet.IntVar(&opts.ticket, "ticket", 0, "Single ticket number (alternative to start/end range)")
+	flagSet.IntVar(&opts.startTicket, "start", 0, "Starting ticket number")
+	flagSet.IntVar(&opts.endTicket, "end", 0, "Ending ticket number")
+	flagSet.BoolVar(&opts.dryRun, "dry-run", false, "Preview changes without applying them")
+	flagSet.BoolVar(&opts.write, "write", false, "Apply label changes to JIRA")
+	flagSet.IntVar(&opts.workers, "workers", 1, "Number of concurrent workers (default: 1)")
+	flagSet.BoolVar(&opts.verbose, "verbose", false, "Enable verbose logging")
+	flagSet.BoolVar(&opts.jsonLog, "json-log", false, "Output logs in JSON format")
+	flagSet.BoolVar(&opts.version, "version", false, "Show version information")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "AI Labeler - Automatically label JIRA tickets using AI analysis\n\n")
 		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Options:\n")
-		flag.PrintDefaults()
+		flagSet.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  # Process a single ticket\n")
-		fmt.Fprintf(os.Stderr, "  %s --ticket 105\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  # Dry run a single ticket\n")
+		fmt.Fprintf(os.Stderr, "  %s --ticket 105 --dry-run\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  # Process a range of tickets\n")
-		fmt.Fprintf(os.Stderr, "  %s --start 100 --end 200\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --start 100 --end 200 --write\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  # Dry run with concurrent processing\n")
 		fmt.Fprintf(os.Stderr, "  %s --start 100 --end 200 --dry-run --workers 5\n\n", os.Args[0])
 	}
 
-	flag.Parse()
+	if err := flagSet.Parse(args); err != nil {
+		return nil, err
+	}
 
 	if opts.version {
 		return opts, nil
+	}
+	if opts.write == opts.dryRun {
+		return nil, fmt.Errorf("must specify exactly one of --write or --dry-run")
 	}
 
 	if opts.ticket > 0 {
@@ -186,7 +199,7 @@ func run(ctx context.Context, cfg *config.Config, opts *options, logger *slog.Lo
 		"project", cfg.JIRA.Project,
 		"llm_provider", cfg.LLM.Provider,
 		"ticket_range", fmt.Sprintf("%d-%d", opts.startTicket, opts.endTicket),
-		"dry_run", opts.dryRun,
+		"mode", modeName(opts.write),
 		"workers", opts.workers)
 
 	retryConfig := &retry.Config{
@@ -223,14 +236,14 @@ func run(ctx context.Context, cfg *config.Config, opts *options, logger *slog.Lo
 		"jira_url", cfg.JIRA.URL,
 		"llm_provider", llmProvider.GetProviderName())
 
-	l := labeler.New(cfg, jiraClient, llmProvider, logger, opts.dryRun)
+	l := labeler.New(cfg, jiraClient, llmProvider, logger, opts.write)
 
 	stats, results, err := l.ProcessTickets(ctx, cfg.JIRA.Project, opts.startTicket, opts.endTicket, opts.workers)
 	if err != nil {
 		return fmt.Errorf("processing tickets: %w", err)
 	}
 
-	printSummary(stats, results, opts.dryRun)
+	printSummary(stats, results, opts.write)
 
 	if stats.Failed > 0 {
 		return fmt.Errorf("%d tickets failed to process", stats.Failed)
@@ -239,7 +252,7 @@ func run(ctx context.Context, cfg *config.Config, opts *options, logger *slog.Lo
 	return nil
 }
 
-func printSummary(stats *labeler.Stats, results []labeler.Result, dryRun bool) {
+func printSummary(stats *labeler.Stats, results []labeler.Result, applyChanges bool) {
 	fmt.Fprintln(os.Stderr, "\n=== Processing Summary ===")
 	fmt.Fprintf(os.Stderr, "Total tickets:     %d\n", stats.Total)
 	fmt.Fprintf(os.Stderr, "Processed:         %d\n", stats.Processed)
@@ -253,7 +266,7 @@ func printSummary(stats *labeler.Stats, results []labeler.Result, dryRun bool) {
 		fmt.Fprintf(os.Stderr, "Avg time/ticket:   %s\n", avgTime.Round(time.Millisecond))
 	}
 
-	if dryRun {
+	if !applyChanges {
 		fmt.Fprintln(os.Stderr, "\nDRY RUN MODE - No changes were applied")
 	}
 
@@ -266,7 +279,7 @@ func printSummary(stats *labeler.Stats, results []labeler.Result, dryRun bool) {
 		}
 	}
 
-	if stats.Labeled > 0 && dryRun {
+	if stats.Labeled > 0 && !applyChanges {
 		fmt.Fprintln(os.Stderr, "\n=== Would Apply Labels ===")
 		for _, result := range results {
 			if result.Success && result.Label != "" {
@@ -276,24 +289,24 @@ func printSummary(stats *labeler.Stats, results []labeler.Result, dryRun bool) {
 	}
 }
 
+func modeName(applyChanges bool) string {
+	if applyChanges {
+		return "write"
+	}
+	return "dry-run"
+}
+
 func createJIRAAuth() (jira.Authenticator, error) {
+	email := os.Getenv("JIRA_EMAIL")
 	token := os.Getenv("JIRA_API_TOKEN")
+	if email == "" {
+		return nil, fmt.Errorf("JIRA_EMAIL environment variable not set (required for Jira Cloud API tokens)")
+	}
 	if token == "" {
 		return nil, fmt.Errorf("JIRA_API_TOKEN environment variable not set")
 	}
 
-	if email := os.Getenv("JIRA_EMAIL"); email != "" {
-		return jira.NewBasicAuth(email, token), nil
-	}
-
-	if strings.Contains(token, ":") {
-		parts := strings.SplitN(token, ":", 2)
-		if len(parts) == 2 {
-			return jira.NewBasicAuth(parts[0], parts[1]), nil
-		}
-	}
-
-	return jira.NewBearerAuth(token), nil
+	return jira.NewBasicAuth(email, token), nil
 }
 
 func lookupLLMAPIKey(provider string) (string, error) {

@@ -7,7 +7,13 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: write
+
+env:
+  GOVULNCHECK_VERSION: v1.1.4
+  GOLANGCI_LINT_VERSION: v1.64.8
+  SYFT_VERSION: v1.42.0
 
 jobs:
   goreleaser:
@@ -26,10 +32,39 @@ jobs:
           cache: true
 
       - name: Install Syft
+        id: install-syft
+        uses: anchore/sbom-action/download-syft@v0
+        with:
+          syft-version: ${{ env.SYFT_VERSION }}
+
+      - name: Add Syft to PATH
+        run: dirname "${{ steps.install-syft.outputs.cmd }}" >> "$GITHUB_PATH"
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Run race tests
+        run: go test -race ./...
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Install govulncheck
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+
+      - name: Run govulncheck
         run: |
-          mkdir -p "$RUNNER_TEMP/bin"
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
+      - name: Install golangci-lint
+        run: go install "github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}"
+
+      - name: Run golangci-lint
+        run: |
+          "$(go env GOPATH)/bin/golangci-lint" run
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7

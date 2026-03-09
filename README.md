@@ -12,12 +12,12 @@ In projects that track work by type (feature, maintenance, quality, support, and
 
 - Go 1.26+
 - JIRA Cloud URL and project key
+- `JIRA_EMAIL`
 - `JIRA_API_TOKEN`
 - one of `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`
 
 Auth mode:
-- if `JIRA_EMAIL` is set, use Basic auth
-- otherwise, use Bearer auth with `JIRA_API_TOKEN`
+- Jira Cloud uses Basic auth with `JIRA_EMAIL` and `JIRA_API_TOKEN`
 
 ## Build
 
@@ -60,18 +60,22 @@ Optional overrides:
 - `LLM_PROVIDER`
 - `LLM_MODEL`
 
+LLM content handling:
+- `llm.ticket_content_mode` defaults to `redacted`
+- `llm.max_description_chars` defaults to `4000`
+
 ## Run
 
 One ticket:
 
 ```bash
-./ai-labeler --ticket 105
+./ai-labeler --ticket 105 --dry-run
 ```
 
 Range:
 
 ```bash
-./ai-labeler --start 100 --end 200 --workers 5
+./ai-labeler --start 100 --end 200 --workers 5 --write
 ```
 
 Dry run:
@@ -79,6 +83,8 @@ Dry run:
 ```bash
 ./ai-labeler --start 100 --end 105 --dry-run
 ```
+
+One mode flag is required: `--dry-run` or `--write`.
 
 Useful flags: `--config`, `--project`, `--verbose`, `--json-log`, `--version`.
 

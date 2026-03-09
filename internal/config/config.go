@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/drpaneas/ai-labeler/internal/jiraurl"
 )
 
 type LabelConfig struct {
@@ -20,9 +22,18 @@ type JIRAConfig struct {
 }
 
 type LLMConfig struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model,omitzero"`
+	Provider            string `json:"provider"`
+	Model               string `json:"model,omitzero"`
+	TicketContentMode   string `json:"ticket_content_mode,omitzero"`
+	MaxDescriptionChars int    `json:"max_description_chars,omitzero"`
 }
+
+const (
+	TicketContentModeRedacted    = "redacted"
+	TicketContentModeSummaryOnly = "summary_only"
+	TicketContentModeFull        = "full"
+	DefaultMaxDescriptionChars   = 4000
+)
 
 // Config holds the application configuration. Use LoadConfig to create a
 // validated instance. If constructing directly, call Validate before use.
@@ -57,8 +68,6 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("invalid config file %s: %w", configPath, err)
 	}
 
-	config.JIRA.URL = strings.TrimSuffix(config.JIRA.URL, "/")
-
 	return &config, nil
 }
 
@@ -85,11 +94,27 @@ func (c *Config) Validate() error {
 	if c.JIRA.URL == "" {
 		return fmt.Errorf("must specify 'jira.url'")
 	}
+	normalizedJIRAURL, err := jiraurl.Normalize(c.JIRA.URL)
+	if err != nil {
+		return fmt.Errorf("invalid jira.url: %w", err)
+	}
+	c.JIRA.URL = normalizedJIRAURL
 	if c.JIRA.Project == "" {
 		return fmt.Errorf("must specify 'jira.project'")
 	}
 	if c.LLM.Provider == "" {
 		return fmt.Errorf("must specify 'llm.provider'")
+	}
+	if c.LLM.TicketContentMode == "" {
+		c.LLM.TicketContentMode = TicketContentModeRedacted
+	}
+	switch c.LLM.TicketContentMode {
+	case TicketContentModeRedacted, TicketContentModeSummaryOnly, TicketContentModeFull:
+	default:
+		return fmt.Errorf("llm.ticket_content_mode must be one of %q, %q, or %q", TicketContentModeRedacted, TicketContentModeSummaryOnly, TicketContentModeFull)
+	}
+	if c.LLM.MaxDescriptionChars <= 0 {
+		c.LLM.MaxDescriptionChars = DefaultMaxDescriptionChars
 	}
 
 	return nil
@@ -97,12 +122,23 @@ func (c *Config) Validate() error {
 
 func (c *Config) ApplyEnvOverrides(logger *slog.Logger) {
 	if envURL := os.Getenv("JIRA_URL"); envURL != "" {
-		if envURL != c.JIRA.URL {
+		normalizedEnvURL, err := jiraurl.Normalize(envURL)
+		if err != nil {
+			logger.Error("Ignoring invalid JIRA URL override",
+				"env_value", envURL,
+				"error", err,
+				"source", "environment variable")
+		} else if !jiraurl.SameHost(c.JIRA.URL, normalizedEnvURL) {
+			logger.Error("Ignoring untrusted JIRA URL override",
+				"config_value", c.JIRA.URL,
+				"env_value", normalizedEnvURL,
+				"source", "environment variable")
+		} else if normalizedEnvURL != c.JIRA.URL {
 			logger.Info("JIRA URL override detected",
 				"config_value", c.JIRA.URL,
-				"env_value", envURL,
+				"env_value", normalizedEnvURL,
 				"source", "environment variable")
-			c.JIRA.URL = strings.TrimSuffix(envURL, "/")
+			c.JIRA.URL = normalizedEnvURL
 		}
 	}
 

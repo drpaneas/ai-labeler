@@ -11,6 +11,7 @@ import (
 
 	"github.com/drpaneas/ai-labeler/internal/config"
 	"github.com/drpaneas/ai-labeler/internal/jira"
+	"github.com/drpaneas/ai-labeler/internal/privacy"
 )
 
 // JIRAClient defines the interface for JIRA operations needed by the labeler.
@@ -25,11 +26,11 @@ type LLMProvider interface {
 }
 
 type Labeler struct {
-	config      *config.Config
-	jiraClient  JIRAClient
-	llmProvider LLMProvider
-	logger      *slog.Logger
-	dryRun      bool
+	config       *config.Config
+	jiraClient   JIRAClient
+	llmProvider  LLMProvider
+	logger       *slog.Logger
+	applyChanges bool
 }
 
 // Result represents the result of processing a single ticket
@@ -56,13 +57,13 @@ type Stats struct {
 }
 
 // New creates a new Labeler instance
-func New(cfg *config.Config, jiraClient JIRAClient, llmProvider LLMProvider, logger *slog.Logger, dryRun bool) *Labeler {
+func New(cfg *config.Config, jiraClient JIRAClient, llmProvider LLMProvider, logger *slog.Logger, applyChanges bool) *Labeler {
 	return &Labeler{
-		config:      cfg,
-		jiraClient:  jiraClient,
-		llmProvider: llmProvider,
-		logger:      logger,
-		dryRun:      dryRun,
+		config:       cfg,
+		jiraClient:   jiraClient,
+		llmProvider:  llmProvider,
+		logger:       logger,
+		applyChanges: applyChanges,
 	}
 }
 
@@ -203,8 +204,17 @@ func (l *Labeler) processSingleTicket(ctx context.Context, projectKey string, ti
 
 	labelInfo := l.config.BuildLabelInfo()
 	validLabels := l.config.ValidLabels()
+	sanitizedTicket := privacy.SanitizeTicket(result.Summary, description, privacy.Policy{
+		Mode:                l.ticketContentMode(),
+		MaxDescriptionChars: l.maxDescriptionChars(),
+	})
 
-	suggestedLabel, err := l.llmProvider.AnalyzeTicket(ctx, result.Summary, description, labelInfo, validLabels)
+	l.logger.Debug("Prepared ticket content for LLM",
+		"ticket", ticketKey,
+		"redactions", sanitizedTicket.RedactionCount,
+		"description_truncated", sanitizedTicket.DescriptionCut)
+
+	suggestedLabel, err := l.llmProvider.AnalyzeTicket(ctx, sanitizedTicket.Summary, sanitizedTicket.Description, labelInfo, validLabels)
 	if err != nil {
 		result.Error = fmt.Errorf("analyzing ticket: %w", err)
 		l.logger.Error("Failed to analyze ticket", "ticket", ticketKey, "error", err)
@@ -220,7 +230,7 @@ func (l *Labeler) processSingleTicket(ctx context.Context, projectKey string, ti
 	result.Label = suggestedLabel
 	l.logger.Info("Label suggested", "ticket", ticketKey, "label", suggestedLabel)
 
-	if !l.dryRun {
+	if l.applyChanges {
 		newLabels := slices.Concat(currentLabels, []string{suggestedLabel})
 
 		err = l.jiraClient.UpdateIssueLabels(ctx, ticketKey, newLabels)
@@ -237,6 +247,20 @@ func (l *Labeler) processSingleTicket(ctx context.Context, projectKey string, ti
 
 	result.Success = true
 	return result
+}
+
+func (l *Labeler) ticketContentMode() string {
+	if l.config != nil && l.config.LLM.TicketContentMode != "" {
+		return l.config.LLM.TicketContentMode
+	}
+	return config.TicketContentModeRedacted
+}
+
+func (l *Labeler) maxDescriptionChars() int {
+	if l.config != nil && l.config.LLM.MaxDescriptionChars > 0 {
+		return l.config.LLM.MaxDescriptionChars
+	}
+	return config.DefaultMaxDescriptionChars
 }
 
 func (l *Labeler) shouldAddLabel(currentLabels []string) (bool, string) {

@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+env:
+  GOVULNCHECK_VERSION: v1.1.4
+  GOLANGCI_LINT_VERSION: v1.64.8
+
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -35,8 +39,15 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      - name: Install govulncheck
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+
+      - name: Run govulncheck
+        run: |
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
       - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        run: go install "github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}"
 
       - name: Run golangci-lint
         run: |

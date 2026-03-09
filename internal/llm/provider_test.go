@@ -276,6 +276,7 @@ func TestBaseProvider_BuildStructuredPrompt(t *testing.T) {
 		{"valid labels list", "[bug, feature]"},
 		{"JSON format instruction", "valid JSON"},
 		{"label field instruction", `"label"`},
+		{"privacy note", "Ticket content may be redacted or truncated for privacy"},
 	}
 
 	for _, check := range checks {

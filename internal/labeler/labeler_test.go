@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -119,11 +120,11 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	tests := []struct {
-		name       string
-		ticketNum  int
-		setupMocks func() (*MockJIRAClient, *MockLLMProvider)
-		dryRun     bool
-		wantResult Result
+		name         string
+		ticketNum    int
+		setupMocks   func() (*MockJIRAClient, *MockLLMProvider)
+		applyChanges bool
+		wantResult   Result
 	}{
 		{
 			name:      "successful labeling",
@@ -153,7 +154,7 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 
 				return jiraClient, llmProvider
 			},
-			dryRun: false,
+			applyChanges: true,
 			wantResult: Result{
 				Ticket:  "TEST-123",
 				Summary: "App crashes on startup",
@@ -186,7 +187,7 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 
 				return jiraClient, llmProvider
 			},
-			dryRun: true,
+			applyChanges: false,
 			wantResult: Result{
 				Ticket:  "TEST-123",
 				Summary: "Add dark mode",
@@ -215,7 +216,7 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 
 				return jiraClient, llmProvider
 			},
-			dryRun: false,
+			applyChanges: true,
 			wantResult: Result{
 				Ticket:     "TEST-123",
 				Summary:    "Already labeled issue",
@@ -238,7 +239,7 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 
 				return jiraClient, llmProvider
 			},
-			dryRun: false,
+			applyChanges: true,
 			wantResult: Result{
 				Ticket: "TEST-404",
 				Error:  errors.New("fetching issue: issue not found"),
@@ -265,7 +266,7 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 
 				return jiraClient, llmProvider
 			},
-			dryRun: false,
+			applyChanges: true,
 			wantResult: Result{
 				Ticket:  "TEST-123",
 				Summary: "Test issue",
@@ -278,11 +279,11 @@ func TestLabeler_ProcessSingleTicket(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			jiraClient, llmProvider := tt.setupMocks()
 			l := &Labeler{
-				config:      cfg,
-				jiraClient:  jiraClient,
-				llmProvider: llmProvider,
-				logger:      logger,
-				dryRun:      tt.dryRun,
+				config:       cfg,
+				jiraClient:   jiraClient,
+				llmProvider:  llmProvider,
+				logger:       logger,
+				applyChanges: tt.applyChanges,
 			}
 
 			ctx := t.Context()
@@ -355,7 +356,7 @@ func TestLabeler_ProcessTickets(t *testing.T) {
 		},
 	}
 
-	l := New(cfg, jiraClient, llmProvider, logger, false)
+	l := New(cfg, jiraClient, llmProvider, logger, true)
 
 	tests := []struct {
 		name        string
@@ -572,7 +573,7 @@ func TestLabeler_ProcessSingleTicket_UpdateError(t *testing.T) {
 		},
 	}
 
-	l := New(cfg, jiraClient, llmProvider, logger, false)
+	l := New(cfg, jiraClient, llmProvider, logger, true)
 	result := l.processSingleTicket(t.Context(), "TEST", 1)
 	if result.Error == nil {
 		t.Error("expected error when update fails")
@@ -680,5 +681,54 @@ func TestUpdateStats(t *testing.T) {
 				t.Errorf("Failed = %d, want %d", stats.Failed, tt.wantStats.Failed)
 			}
 		})
+	}
+}
+
+func TestLabeler_ProcessSingleTicket_SanitizesLLMInput(t *testing.T) {
+	cfg := &config.Config{
+		Labels: []config.LabelConfig{{Name: "bug", Description: "d"}},
+		LLM: config.LLMConfig{
+			Provider:            "openai",
+			TicketContentMode:   config.TicketContentModeRedacted,
+			MaxDescriptionChars: 32,
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	var gotSummary string
+	var gotDescription string
+	jiraClient := &MockJIRAClient{
+		GetIssueFunc: func(ctx context.Context, issueKey string) (*jira.Issue, error) {
+			issue := &jira.Issue{Key: issueKey}
+			issue.Fields.Summary = "Email alice@example.com"
+			issue.Fields.Description = "Token=supersecret123 and see https://example.com/very/long/path"
+			issue.Fields.Labels = []string{}
+			return issue, nil
+		},
+	}
+	llmProvider := &MockLLMProvider{
+		AnalyzeFunc: func(ctx context.Context, summary, description, labelInfo string, validLabels []string) (string, error) {
+			gotSummary = summary
+			gotDescription = description
+			return "bug", nil
+		},
+	}
+
+	l := New(cfg, jiraClient, llmProvider, logger, false)
+	result := l.processSingleTicket(t.Context(), "TEST", 1)
+	if result.Error != nil {
+		t.Fatalf("processSingleTicket() unexpected error = %v", result.Error)
+	}
+	if strings.Contains(gotSummary, "alice@example.com") {
+		t.Errorf("summary passed to LLM still contains email: %q", gotSummary)
+	}
+	if strings.Contains(gotDescription, "supersecret123") {
+		t.Errorf("description passed to LLM still contains secret: %q", gotDescription)
+	}
+	if strings.Contains(gotDescription, "https://example.com/very/long/path") {
+		t.Errorf("description passed to LLM still contains URL: %q", gotDescription)
+	}
+	if !strings.Contains(gotDescription, "[TRUNCATED]") {
+		t.Errorf("description passed to LLM should be truncated, got %q", gotDescription)
 	}
 }
