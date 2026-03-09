@@ -10,7 +10,7 @@ In projects that track work by type (feature, maintenance, quality, support, and
 
 ## Requirements
 
-- Go 1.26+
+- Go 1.26.1+
 - JIRA Cloud URL and project key
 - `JIRA_EMAIL`
 - `JIRA_API_TOKEN`
@@ -47,6 +47,14 @@ Create `config.json` (see `config-example.json`):
   }
 }
 ```
+
+LLM settings:
+- `llm.provider` accepts `openai`, `gemini`, `googleai`, `claude`, or `anthropic`
+- `llm.model` may be any model name supported by the selected provider
+- if `llm.model` is omitted, the defaults are:
+- `openai` -> `gpt-4`
+- `gemini` or `googleai` -> `gemini-2.5-flash`
+- `claude` or `anthropic` -> `claude-3-opus-20240229`
 
 Rules:
 - `labels` must not be empty
