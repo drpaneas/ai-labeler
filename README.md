@@ -8,6 +8,10 @@ Supported providers are OpenAI, Gemini, and Claude.
 
 In projects that track work by type (feature, maintenance, quality, support, and so on), unlabeled tickets break dashboards and metrics. This tool keeps labels consistent at scale by having an LLM pick the right label from your definitions.
 
+With consistent labels, you can achieve dashboards in JIRA like this:
+
+![Example JIRA dashboard powered by consistent labels](assets/jira-dashboard-example.png)
+
 ## Requirements
 
 - Go 1.26.1+
@@ -54,7 +58,7 @@ LLM settings:
 - if `llm.model` is omitted, the defaults are:
 - `openai` -> `gpt-4`
 - `gemini` or `googleai` -> `gemini-2.5-flash`
-- `claude` or `anthropic` -> `claude-3-opus-20240229`
+- `claude` or `anthropic` -> `claude-opus-4-6`
 
 Rules:
 - `labels` must not be empty

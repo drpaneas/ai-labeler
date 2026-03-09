@@ -107,7 +107,7 @@ func createGeminiProvider(ctx context.Context, apiKey, model string) (llms.Model
 
 func createClaudeProvider(apiKey, model string) (llms.Model, error) {
 	if model == "" {
-		model = "claude-3-opus-20240229"
+		model = "claude-opus-4-6"
 	}
 	return anthropic.New(
 		anthropic.WithToken(apiKey),
